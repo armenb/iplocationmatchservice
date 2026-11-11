@@ -4,7 +4,7 @@ DB ?= data/GeoLite2-Country.mmdb
 # otherwise `gtar` (macOS: brew install gnu-tar). Override with `make TAR=...`.
 TAR ?= $(shell tar --version 2>/dev/null | grep -q 'GNU tar' && echo tar || echo gtar)
 
-.PHONY: build test test-integration test-integration-real proto fetch-db run
+.PHONY: build test test-integration test-integration-real proto fetch-db docker-build run
 
 build:
 	go build -o bin/iplocationmatch ./cmd/iplocationmatch
@@ -32,6 +32,12 @@ fetch-db:
 	  "https://download.maxmind.com/geoip/databases/GeoLite2-Country/download?suffix=tar.gz" -o $$tmp/db.tgz && \
 	$(TAR) -xzf $$tmp/db.tgz -C $$tmp --strip-components=1 --wildcards '*.mmdb' && \
 	install -m 0444 $$tmp/GeoLite2-Country.mmdb $(DB) && rm -rf $$tmp && echo "wrote $(DB)"
+
+# Builds the container image. The database is copied in, not downloaded: run fetch-db first.
+IMAGE ?= iplocationmatch:dev
+docker-build:
+	@test -f data/GeoLite2-Country.mmdb || { echo "data/GeoLite2-Country.mmdb not found; run 'make fetch-db' first"; exit 1; }
+	docker build -t $(IMAGE) .
 
 run: build
 	./bin/iplocationmatch -db $(DB)

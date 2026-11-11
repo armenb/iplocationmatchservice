@@ -1,0 +1,8 @@
+# The Dockerfile copies only what it names. data/GeoLite2-Country.mmdb must stay
+# in the build context, so data/ is deliberately NOT listed here.
+.git
+bin/
+test/
+proto/
+deploy/
+*.md

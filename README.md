@@ -78,6 +78,22 @@ protocol's own convention rather than matched one-to-one:
   location-generic, so the route avoids repeating "ip" or "country"; the request body already names
   the `ip` and `countries` it checks.
 
+## Container and Kubernetes
+
+```sh
+make fetch-db       # the image build copies the database; it never downloads it
+make docker-build   # -> iplocationmatch:dev (override with IMAGE=...)
+```
+
+The `Dockerfile` is a multi-stage build into `gcr.io/distroless/static:nonroot` (UID 65532). It copies
+`data/GeoLite2-Country.mmdb` by name, so the build fails if that file is missing; `make docker-build`
+checks first and prints a clearer message. Keep the image in a private registry: GeoLite2 is licensed by
+MaxMind.
+
+`deploy/k8s/` has a `Deployment` (2 replicas, zero-unavailable rolling updates, non-root, read-only root
+filesystem, `/healthz` probes) and a `Service` exposing `http` on 80 and `grpc` (h2c) on 9090. Set the
+`image:` in `deployment.yaml` to your registry path and an immutable tag.
+
 ## Dependency provenance
 
 `github.com/oschwald/maxminddb-golang/v2` (v2.9.0) is the `.mmdb` reader. Checked 2026-11-11:
