@@ -19,7 +19,8 @@ GNU tar (Linux) and `gtar` otherwise. On macOS, whose built-in `tar` is BSD tar,
 `brew install gnu-tar`. Override the choice with `make fetch-db TAR=/path/to/gnu-tar ...`.
 
 Or copy your own `GeoLite2-Country.mmdb` to that path. The file is opened read-only; replace it and
-restart the service to pick up a new release.
+restart the service to pick up a new release. That is fine for local development; for production, see
+[DESIGN.md](DESIGN.md) for the canary-rollout approach to updating the mapping data.
 
 ## Run
 
