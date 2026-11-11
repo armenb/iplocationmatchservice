@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package iplocationmatch.v1;
+
+option go_package = "github.com/armenb/iplocationmatch/gen/iplocationmatch/v1;iplocationmatchv1";
+
+// IPLocationMatchService answers geolocation questions about IP addresses.
+service IPLocationMatchService {
+  // CheckIP reports whether an IP address is located in any of the given
+  // countries. Addresses absent from the database match no country.
+  // Returns INVALID_ARGUMENT for a malformed IP, a malformed country code, or
+  // an empty country list.
+  rpc CheckIP(CheckIPRequest) returns (CheckIPResponse);
+}
+
+message CheckIPRequest {
+  // IPv4 or IPv6 address in textual form, e.g. "81.2.69.142" or "2001:db8::1".
+  string ip = 1;
+  // ISO 3166-1 alpha-2 country codes, e.g. ["US", "CA"]. Case-insensitive.
+  repeated string countries = 2;
+}
+
+message CheckIPResponse {
+  // True if the IP address is in one of the requested countries.
+  bool match = 1;
+}
