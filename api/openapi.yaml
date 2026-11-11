@@ -1,0 +1,156 @@
+openapi: 3.0.3
+info:
+  title: IP Location Match
+  version: 1.0.0
+  description: |
+    Answers one question: is this IP address located in one of the allowed countries?
+
+    **Unknown locations are never allowed (fail closed).** If the database has no country
+    for the address (private or reserved ranges, unmapped networks, anycast ranges),
+    `match` is `false`, exactly as for a known address in a different country. Callers that
+    must tell the two apart should not infer it from this API; the service records the
+    distinction (`result: unknown_ip`) in its logs and metrics.
+
+    Inputs are validated strictly so that callers using the endpoint incorrectly find out
+    immediately instead of being silently guessed at: send a bare IP address (no port, no
+    brackets, no surrounding whitespace, no `X-Forwarded-For` list), a non-empty
+    `allowed_countries`, and one JSON object with exactly the documented keys (names are
+    case-sensitive, none repeated, no unknown keys). The body is parsed as JSON whatever the
+    `Content-Type` header says.
+
+    The same operation is available over gRPC:
+    `proto/iplocationmatch/v1/iplocationmatch.proto` (`IPLocationMatchService/CheckIP`).
+
+    The service speaks plain HTTP and performs no authentication; it is meant to run inside
+    the cluster behind the API gateway. See DESIGN.md ("Security model").
+servers:
+  - url: http://localhost:8080
+paths:
+  /v1/check:
+    post:
+      operationId: checkIP
+      summary: Is the IP address in one of the allowed countries?
+      description: |
+        Every call except `/healthz` is logged and counted by the service.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckRequest"
+            examples:
+              ipv4:
+                summary: IPv4 address, two allowed countries
+                value: { ip: "81.2.69.142", allowed_countries: ["GB", "US"] }
+              ipv6:
+                summary: IPv6 address; country codes are case-insensitive
+                value: { ip: "2001:4860:4860::8888", allowed_countries: ["us"] }
+      responses:
+        "200":
+          description: The lookup succeeded. `match` is `false` for a known address in another country and for an address with no known country.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckResponse"
+              examples:
+                allowed:
+                  value: { match: true }
+                notAllowed:
+                  value: { match: false }
+        "400":
+          description: |
+            The request is invalid: malformed JSON, trailing data after the JSON body, a body that
+            is not an object, an unknown, repeated or missing field (field names are
+            case-sensitive), a malformed IP address (including one with surrounding whitespace), an empty `allowed_countries`, an
+            `allowed_countries` longer than the limit (50 by default), or a country code that is
+            not two letters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                badIP:
+                  value: { error: 'invalid IP address: "nope"' }
+                noCountries:
+                  value: { error: "at least one country is required" }
+                tooManyCountries:
+                  value: { error: "too many countries: got 51, at most 50 allowed" }
+                unknownField:
+                  value: { error: 'malformed JSON body: unknown field "x"' }
+                duplicateField:
+                  value: { error: 'malformed JSON body: duplicate field "ip"' }
+        "405":
+          description: The method is not POST. The body is plain text, not JSON.
+          headers:
+            Allow:
+              schema:
+                type: string
+                example: POST
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Method Not Allowed
+        "413":
+          description: The request body is larger than 1 MiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: "request body too large" }
+        "500":
+          description: An internal error. The cause is logged, never returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: "internal error" }
+  /healthz:
+    get:
+      operationId: healthz
+      summary: Liveness and readiness probe
+      description: Returns 200 once the service is serving. Not logged or counted.
+      responses:
+        "200":
+          description: The service is up.
+components:
+  schemas:
+    CheckRequest:
+      type: object
+      additionalProperties: false
+      required: [ip, allowed_countries]
+      properties:
+        ip:
+          type: string
+          description: |
+            IPv4 or IPv6 address in textual form, with no port and no brackets.
+            IPv4-mapped IPv6 addresses (`::ffff:1.2.3.4`) are treated as IPv4.
+          example: "81.2.69.142"
+        allowed_countries:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: |
+            ISO 3166-1 alpha-2 country codes, case-insensitive. The address matches if it is
+            located in any of them. An empty list is rejected rather than interpreted: a
+            caller with no country restriction can see that and skip the call. The limit of 50
+            (every country in Europe plus a handful of others) is the default of the server's
+            `-max-allowed-countries` setting; a longer list is rejected so that the need can be
+            discussed with the customer instead of silently served.
+          items:
+            type: string
+            pattern: "^[A-Za-z]{2}$"
+          example: ["GB", "US"]
+    CheckResponse:
+      type: object
+      required: [match]
+      properties:
+        match:
+          type: boolean
+          description: True if the address is located in one of `allowed_countries`.
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

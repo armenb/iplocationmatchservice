@@ -33,8 +33,10 @@ make run          # or: bin/iplocationmatch -db data/GeoLite2-Country.mmdb
 | `-db` | `IPLOCATIONMATCH_DB` | `data/GeoLite2-Country.mmdb` |
 | `-http-addr` | `IPLOCATIONMATCH_HTTP_ADDR` | `:8080` |
 | `-grpc-addr` | `IPLOCATIONMATCH_GRPC_ADDR` | `:9090` |
+| `-statsd-addr` | `IPLOCATIONMATCH_STATSD_ADDR` | empty (metrics off) |
+| `-max-allowed-countries` | `IPLOCATIONMATCH_MAX_ALLOWED_COUNTRIES` | `50` |
 
-SIGINT/SIGTERM trigger a graceful shutdown (10s drain).
+SIGINT/SIGTERM trigger a graceful shutdown (10s drain); a second signal during the drain kills the process.
 
 ## HTTP API
 
@@ -45,16 +47,27 @@ curl -s localhost:8080/v1/check -d '{"ip":"81.2.69.142","allowed_countries":["GB
 # {"match":true}
 ```
 
-- `ip`: IPv4 or IPv6 (IPv4-mapped IPv6 is treated as IPv4). Send a bare address: square brackets
+- `ip`: IPv4 or IPv6 (IPv4-mapped IPv6 is treated as IPv4). Send a bare address with no surrounding whitespace: square brackets
   (`[2001:db8::1]`) and port suffixes (`1.2.3.4:443`, `[2001:db8::1]:443`) are not currently accepted and
   return 400 / `INVALID_ARGUMENT`. Support could be added, e.g. by falling back to `netip.ParseAddrPort` in
   `parseIP`; strip them in the load balancer or caller until then.
-- `allowed_countries`: non-empty list of ISO 3166-1 alpha-2 codes, case-insensitive.
-- An address not present in the database returns `{"match":false}`.
-- Errors return `{"error":"..."}`: `400` for a bad IP, bad country code, empty list, malformed JSON or
-  unknown fields; `405` for non-POST; `413` for bodies over 1 MiB.
+- `allowed_countries`: non-empty list of ISO 3166-1 alpha-2 codes, case-insensitive, with at most 50
+  entries by default (`-max-allowed-countries`; every country in Europe plus a handful of others). An empty
+  list is a `400`, not "no restriction": a caller with no restriction can skip the call. A longer list is also
+  a `400`, so a request that needs more is a prompt to talk to the customer about the limit or about an
+  "all except these" variant; see [DESIGN.md](DESIGN.md).
+- **Unknown locations are never allowed (fail closed).** An address the database has no country for
+  (private or reserved ranges, unmapped networks, some anycast ranges) returns `{"match":false}`, the same
+  as a known address in another country. See [DESIGN.md](DESIGN.md) for why.
+- The body must be one JSON object with exactly these keys. Key names are case-sensitive, none may repeat, and
+  unknown keys are rejected. It is parsed as JSON whatever the `Content-Type`, so `curl -d` works without a header.
+- Errors return `{"error":"..."}`: `400` for a bad IP, bad country code, empty or too long list, malformed JSON,
+  repeated or unknown keys; `413` for bodies over 1 MiB. A non-POST method gets `405` and an unknown path `404`, both
+  as plain text.
 
-`GET /healthz` returns `200`.
+`GET /healthz` returns `200`. It is not logged or counted.
+
+The full contract, with examples, is in [`api/openapi.yaml`](api/openapi.yaml).
 
 ## gRPC API
 
@@ -79,6 +92,38 @@ protocol's own convention rather than matched one-to-one:
   location-generic, so the route avoids repeating "ip" or "country"; the request body already names
   the `ip` and `allowed_countries` it checks.
 
+## Observability
+
+**Request log.** Every request except `/healthz` is logged as one JSON line on stderr, for both HTTP and gRPC:
+
+```json
+{"time":"2026-11-11T15:35:40-05:00","level":"INFO","msg":"request","transport":"http","code":"200","result":"no_match","country":"US","ip":"8.8.8.8","db_version":"2026-11-10","dur_us":200}
+```
+
+- `code` is the HTTP status or gRPC code name; `result` is one of `match`, `no_match`, `unknown_ip`,
+  `invalid` (client error) or `error` (server error, logged at `ERROR` with an `err` field).
+- `country` is the country the IP resolved to; it says why a user was denied. It is omitted when the
+  location is unknown (`unknown_ip`) or the request failed before the lookup, and is never a metric tag
+  (about 250 values).
+- `db_version` is the database build date, so you can tell which data a pod is serving. It is also logged
+  once at startup.
+- **Keep it compact:** log volume scales with request volume, which can be one call per HTTP resource a
+  user loads. The line has a fixed, short set of fields; it deliberately omits the country list and the
+  request body, and truncates the caller-supplied `ip` to 64 bytes. The IP is personal data in some
+  jurisdictions; drop the `ip` field in `internal/telemetry` if your policy requires.
+
+**Metrics.** Set `-statsd-addr` to send [DogStatsD](https://docs.datadoghq.com/developers/dogstatsd/) over UDP
+(plain statsd has no tags; DogStatsD adds them as `|#key:value`). Metrics are queued and sent in batches off
+the request path, and are dropped rather than ever blocking a request.
+
+| Metric | Type | Tags |
+|---|---|---|
+| `iplocationmatch.requests` | counter | `transport:http\|grpc`, `result:<as above>`, `db_version:<date>` |
+| `iplocationmatch.request.duration` | timer (ms) | `transport`, `db_version` |
+
+With the Datadog agent on Kubernetes, point `-statsd-addr` at the node-local agent (for example
+`$(HOST_IP):8125`, with `HOST_IP` from the downward API `status.hostIP`).
+
 ## Container and Kubernetes
 
 ```sh
@@ -92,7 +137,8 @@ checks first and prints a clearer message. Keep the image in a private registry:
 MaxMind.
 
 `deploy/k8s/` has a `Deployment` (2 replicas, zero-unavailable rolling updates, non-root, read-only root
-filesystem, `/healthz` probes) and a `Service` exposing `http` on 80 and `grpc` (h2c) on 9090. Set the
+filesystem, `/healthz` probes, and a 5-second `preStop` sleep so routes to a terminating pod are removed before the
+server stops accepting connections; the kubelet runs it, since the distroless image has no shell) and a `Service` exposing `http` on 80 and `grpc` (h2c) on 9090. Set the
 `image:` in `deployment.yaml` to your registry path and an immutable tag.
 
 ## Dependency provenance

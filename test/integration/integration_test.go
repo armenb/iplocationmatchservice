@@ -18,6 +18,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -27,8 +30,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	iplocationmatchv1 "iplocationmatch/gen/iplocationmatch/v1"
-	"iplocationmatch/internal/testdb"
+	iplocationmatchv1 "iplocationmatchservice/gen/iplocationmatch/v1"
+	"iplocationmatchservice/internal/testdb"
 )
 
 // neverACountry is a well-formed code that is not assigned to any country, so
@@ -45,13 +48,13 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	binPath = filepath.Join(dir, "iplocationmatch")
-	if out, err := exec.Command("go", "build", "-o", binPath, "iplocationmatch/cmd/iplocationmatch").CombinedOutput(); err != nil {
+	if out, err := exec.Command("go", "build", "-o", binPath, "iplocationmatchservice/cmd/iplocationmatch").CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "go build: %v\n%s", err, out)
-		os.RemoveAll(dir)
+		_ = os.RemoveAll(dir) // temp-dir cleanup; not actionable
 		os.Exit(1)
 	}
 	code := m.Run()
-	os.RemoveAll(dir)
+	_ = os.RemoveAll(dir)
 	os.Exit(code)
 }
 
@@ -95,54 +98,73 @@ func freeAddr(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().String()
 }
 
-// startServer launches iplocationmatch on dbPath, waits until it is healthy, and
-// returns its HTTP and gRPC addresses. The process is stopped on cleanup.
-func startServer(t *testing.T, dbPath string) (httpAddr, grpcAddr string) {
+// server is a running iplocationmatch process.
+type server struct {
+	httpAddr, grpcAddr string
+	stderr             *bytes.Buffer // complete only after Stop returns
+	stop               func()
+}
+
+// Stop sends SIGTERM, waits for a clean exit, and fails the test otherwise.
+// It is idempotent and also runs on cleanup.
+func (s *server) Stop() { s.stop() }
+
+// startServer launches iplocationmatch on dbPath with any extra flags, waits
+// until it is healthy, and returns it. The process is stopped on cleanup.
+func startServer(t *testing.T, dbPath string, extraArgs ...string) *server {
 	t.Helper()
 
-	httpAddr, grpcAddr = freeAddr(t), freeAddr(t)
-	var stderr bytes.Buffer
-	cmd := exec.Command(binPath, "-db", dbPath, "-http-addr", httpAddr, "-grpc-addr", grpcAddr)
-	cmd.Stderr = &stderr
+	srv := &server{httpAddr: freeAddr(t), grpcAddr: freeAddr(t), stderr: &bytes.Buffer{}}
+	args := append([]string{"-db", dbPath, "-http-addr", srv.httpAddr, "-grpc-addr", srv.grpcAddr}, extraArgs...)
+	cmd := exec.Command(binPath, args...)
+	cmd.Stderr = srv.stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start iplocationmatch: %v", err)
 	}
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 
-	t.Cleanup(func() {
-		_ = cmd.Process.Signal(syscall.SIGTERM)
-		select {
-		case err := <-exited:
-			if err != nil {
-				t.Errorf("iplocationmatch did not exit cleanly on SIGTERM: %v\n%s", err, stderr.String())
+	var once sync.Once
+	srv.stop = func() {
+		once.Do(func() {
+			// Under concurrent load the client can leave an idle connection that never sent
+			// a request; http.Server.Shutdown waits up to 5s for such a connection, so close
+			// ours first to keep the shutdown fast.
+			http.DefaultClient.CloseIdleConnections()
+			_ = cmd.Process.Signal(syscall.SIGTERM)
+			select {
+			case err := <-exited:
+				if err != nil {
+					t.Errorf("iplocationmatch did not exit cleanly on SIGTERM: %v\n%s", err, srv.stderr.String())
+				}
+			case <-time.After(15 * time.Second):
+				_ = cmd.Process.Kill()
+				t.Errorf("iplocationmatch did not exit within 15s of SIGTERM\n%s", srv.stderr.String())
 			}
-		case <-time.After(15 * time.Second):
-			_ = cmd.Process.Kill()
-			t.Errorf("iplocationmatch did not exit within 15s of SIGTERM\n%s", stderr.String())
-		}
-	})
+		})
+	}
+	t.Cleanup(srv.stop)
 
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		resp, err := http.Get("http://" + httpAddr + "/healthz")
+		resp, err := http.Get("http://" + srv.httpAddr + "/healthz")
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				return httpAddr, grpcAddr
+				return srv
 			}
 		}
 		select {
 		case err := <-exited:
-			t.Fatalf("iplocationmatch exited during startup: %v\n%s", err, stderr.String())
+			t.Fatalf("iplocationmatch exited during startup: %v\n%s", err, srv.stderr.String())
 		default:
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("iplocationmatch not healthy within 10s\n%s", stderr.String())
+			t.Fatalf("iplocationmatch not healthy within 10s\n%s", srv.stderr.String())
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -155,7 +177,8 @@ func TestService(t *testing.T) {
 }
 
 func runSuite(t *testing.T, ds dataset) {
-	httpAddr, grpcAddr := startServer(t, ds.dbPath)
+	srv := startServer(t, ds.dbPath)
+	httpAddr, grpcAddr := srv.httpAddr, srv.grpcAddr
 
 	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -170,7 +193,7 @@ func runSuite(t *testing.T, ds dataset) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		var out map[string]any
 		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 			t.Fatalf("decode response: %v", err)
@@ -246,7 +269,7 @@ func runSuite(t *testing.T, ds dataset) {
 							}
 							var out struct{ Match bool }
 							err = json.NewDecoder(resp.Body).Decode(&out)
-							resp.Body.Close()
+							_ = resp.Body.Close()
 							if err != nil {
 								t.Errorf("decode: %v", err)
 								return
@@ -270,4 +293,179 @@ func runSuite(t *testing.T, ds dataset) {
 		}
 		wg.Wait()
 	})
+}
+
+// TestTelemetry drives requests over both transports and checks what the real
+// binary reports: one request log line each (health probes excluded) and
+// DogStatsD metrics tagged with the database version.
+func TestTelemetry(t *testing.T) {
+	agent, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = agent.Close() })
+
+	srv := startServer(t, testdb.Write(t, testdb.Fixture), "-statsd-addr", agent.LocalAddr().String())
+
+	conn, err := grpc.NewClient(srv.grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	client := iplocationmatchv1.NewIPLocationMatchServiceClient(conn)
+
+	post := func(body string) {
+		t.Helper()
+		resp, err := http.Post("http://"+srv.httpAddr+"/v1/check", "application/json", bytes.NewBufferString(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+	}
+	// Sequential, so log order is deterministic.
+	post(`{"ip":"81.2.69.142","allowed_countries":["GB"]}`) // http match
+	if _, err := client.CheckIP(t.Context(), &iplocationmatchv1.CheckIPRequest{Ip: "81.2.69.142", AllowedCountries: []string{"US"}}); err != nil {
+		t.Fatal(err) // grpc no_match
+	}
+	post(`{"ip":"nope","allowed_countries":["US"]}`)    // http invalid
+	post(`{"ip":"8.8.8.8","allowed_countries":["US"]}`) // http unknown_ip
+	srv.Stop()                                          // flushes metrics, completes stderr
+
+	// --- logs ---
+	type req struct{ transport, code, result, country string }
+	var got []req
+	version := ""
+	for line := range strings.SplitSeq(strings.TrimSpace(srv.stderr.String()), "\n") {
+		var l map[string]any
+		if err := json.Unmarshal([]byte(line), &l); err != nil {
+			t.Fatalf("stderr line is not JSON: %v: %s", err, line)
+		}
+		if l["msg"] != "request" {
+			continue
+		}
+		country, _ := l["country"].(string) // absent when the location is unknown
+		got = append(got, req{l["transport"].(string), l["code"].(string), l["result"].(string), country})
+		v := l["db_version"].(string)
+		if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`).MatchString(v) || (version != "" && v != version) {
+			t.Fatalf("db_version = %q (previous %q)", v, version)
+		}
+		version = v
+		if _, ok := l["dur_us"].(float64); !ok {
+			t.Fatalf("dur_us missing: %s", line)
+		}
+	}
+	want := []req{
+		{"http", "200", "match", "GB"},
+		{"grpc", "OK", "no_match", "GB"},
+		{"http", "400", "invalid", ""},
+		{"http", "200", "unknown_ip", ""},
+	}
+	if !slices.Equal(got, want) { // also proves the /healthz startup probes were not logged
+		t.Fatalf("request log lines = %+v, want %+v", got, want)
+	}
+
+	// --- metrics ---
+	var lines []string
+	buf := make([]byte, 65535)
+	for {
+		_ = agent.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+		n, _, err := agent.ReadFromUDP(buf)
+		if err != nil {
+			break
+		}
+		lines = append(lines, strings.Split(string(buf[:n]), "\n")...)
+	}
+	tag := "|#db_version:" + version
+	for _, w := range []string{
+		"iplocationmatch.requests:1|c" + tag + ",transport:http,result:match",
+		"iplocationmatch.requests:1|c" + tag + ",transport:grpc,result:no_match",
+		"iplocationmatch.requests:1|c" + tag + ",transport:http,result:invalid",
+		"iplocationmatch.requests:1|c" + tag + ",transport:http,result:unknown_ip",
+	} {
+		if !slices.Contains(lines, w) {
+			t.Errorf("missing metric %q in %q", w, lines)
+		}
+	}
+	timing := regexp.MustCompile(`^iplocationmatch\.request\.duration:\d+\.\d{3}\|ms` + regexp.QuoteMeta(tag) + `,transport:(http|grpc)$`)
+	var nHTTP, nGRPC int
+	for _, l := range lines {
+		if m := timing.FindStringSubmatch(l); m != nil {
+			if m[1] == "http" {
+				nHTTP++
+			} else {
+				nGRPC++
+			}
+		}
+	}
+	if nHTTP != 3 || nGRPC != 1 {
+		t.Errorf("timing metrics http=%d grpc=%d, want 3 and 1; lines: %q", nHTTP, nGRPC, lines)
+	}
+}
+
+// TestAllowedCountriesLimit checks that -max-allowed-countries reaches both
+// transports of the real binary.
+func TestAllowedCountriesLimit(t *testing.T) {
+	srv := startServer(t, testdb.Write(t, testdb.Fixture), "-max-allowed-countries", "2")
+
+	post := func(countries string) (int, string) {
+		t.Helper()
+		resp, err := http.Post("http://"+srv.httpAddr+"/v1/check", "application/json",
+			bytes.NewBufferString(`{"ip":"81.2.69.142","allowed_countries":[`+countries+`]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var out bytes.Buffer
+		_, _ = out.ReadFrom(resp.Body)
+		return resp.StatusCode, out.String()
+	}
+	if code, body := post(`"GB","US"`); code != 200 {
+		t.Fatalf("at the limit: %d %s", code, body)
+	}
+	if code, body := post(`"GB","US","SE"`); code != 400 || !strings.Contains(body, "got 3, at most 2 allowed") {
+		t.Fatalf("over the limit: %d %s", code, body)
+	}
+
+	conn, err := grpc.NewClient(srv.grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	client := iplocationmatchv1.NewIPLocationMatchServiceClient(conn)
+	if _, err := client.CheckIP(t.Context(), &iplocationmatchv1.CheckIPRequest{Ip: "81.2.69.142", AllowedCountries: []string{"GB", "US"}}); err != nil {
+		t.Fatalf("grpc at the limit: %v", err)
+	}
+	_, err = client.CheckIP(t.Context(), &iplocationmatchv1.CheckIPRequest{Ip: "81.2.69.142", AllowedCountries: []string{"GB", "US", "SE"}})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("grpc over the limit: %v, want InvalidArgument", err)
+	}
+}
+
+// A malformed or non-positive limit must stop startup, not fall back silently.
+func TestInvalidLimitConfigFailsStartup(t *testing.T) {
+	db := testdb.Write(t, testdb.Fixture)
+	tests := []struct {
+		name string
+		args []string
+		env  []string
+		want string
+	}{
+		{"zero flag", []string{"-max-allowed-countries", "0"}, nil, "max-allowed-countries must be at least 1"},
+		{"negative flag", []string{"-max-allowed-countries", "-3"}, nil, "max-allowed-countries must be at least 1"},
+		{"non-numeric env", nil, []string{"IPLOCATIONMATCH_MAX_ALLOWED_COUNTRIES=lots"}, "IPLOCATIONMATCH_MAX_ALLOWED_COUNTRIES"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append([]string{"-db", db, "-http-addr", "127.0.0.1:0", "-grpc-addr", "127.0.0.1:0"}, tt.args...)
+			cmd := exec.Command(binPath, args...)
+			cmd.Env = append(os.Environ(), tt.env...)
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("expected startup to fail; output: %s", out)
+			}
+			if !strings.Contains(string(out), tt.want) {
+				t.Fatalf("output %q does not mention %q", out, tt.want)
+			}
+		})
+	}
 }

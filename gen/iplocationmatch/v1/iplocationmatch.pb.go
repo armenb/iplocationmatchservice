@@ -26,7 +26,9 @@ type CheckIPRequest struct {
 	// IPv4 or IPv6 address in textual form, e.g. "81.2.69.142" or "2001:db8::1".
 	Ip string `protobuf:"bytes,1,opt,name=ip,proto3" json:"ip,omitempty"`
 	// ISO 3166-1 alpha-2 country codes, e.g. ["US", "CA"]. Case-insensitive.
-	// The IP matches if it is located in any of these countries. Must be non-empty.
+	// The IP matches if it is located in any of these countries. Must be non-empty,
+	// and have at most 50 entries unless the server was configured with a different
+	// -max-allowed-countries; longer lists are rejected with INVALID_ARGUMENT.
 	AllowedCountries []string `protobuf:"bytes,2,rep,name=allowed_countries,json=allowedCountries,proto3" json:"allowed_countries,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -132,7 +134,7 @@ const file_iplocationmatch_v1_iplocationmatch_proto_rawDesc = "" +
 	"\x0fCheckIPResponse\x12\x14\n" +
 	"\x05match\x18\x01 \x01(\bR\x05match2l\n" +
 	"\x16IPLocationMatchService\x12R\n" +
-	"\aCheckIP\x12\".iplocationmatch.v1.CheckIPRequest\x1a#.iplocationmatch.v1.CheckIPResponseB:Z8iplocationmatch/gen/iplocationmatch/v1;iplocationmatchv1b\x06proto3"
+	"\aCheckIP\x12\".iplocationmatch.v1.CheckIPRequest\x1a#.iplocationmatch.v1.CheckIPResponseBAZ?iplocationmatchservice/gen/iplocationmatch/v1;iplocationmatchv1b\x06proto3"
 
 var (
 	file_iplocationmatch_v1_iplocationmatch_proto_rawDescOnce sync.Once

@@ -1,4 +1,4 @@
-module iplocationmatch
+module iplocationmatchservice
 
 go 1.27.4
 

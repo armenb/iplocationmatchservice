@@ -12,6 +12,10 @@ import (
 	"github.com/maxmind/mmdbwriter/mmdbtype"
 )
 
+// NoCountry marks an entry whose record has no "country" key, only a
+// "registered_country" (US). Some real GeoLite2 networks look like this.
+const NoCountry = ""
+
 // Fixture is the CIDR -> ISO country code mapping used across the test suite.
 var Fixture = map[string]string{
 	"81.2.69.0/24":    "GB",
@@ -19,6 +23,7 @@ var Fixture = map[string]string{
 	"89.160.20.0/24":  "SE",
 	"2001:218::/32":   "JP",
 	"2a02:ff00::/32":  "DE",
+	"203.0.113.0/24":  NoCountry,
 }
 
 // Write creates a GeoLite2-Country-style database containing entries in a
@@ -41,6 +46,9 @@ func Write(tb testing.TB, entries map[string]string) string {
 			tb.Fatalf("parse CIDR %q: %v", cidr, err)
 		}
 		rec := mmdbtype.Map{"country": mmdbtype.Map{"iso_code": mmdbtype.String(code)}}
+		if code == NoCountry {
+			rec = mmdbtype.Map{"registered_country": mmdbtype.Map{"iso_code": mmdbtype.String("US")}}
+		}
 		if err := w.Insert(n, rec); err != nil {
 			tb.Fatalf("insert %s: %v", cidr, err)
 		}
@@ -51,9 +59,12 @@ func Write(tb testing.TB, entries map[string]string) string {
 	if err != nil {
 		tb.Fatalf("create %s: %v", path, err)
 	}
-	defer f.Close()
 	if _, err := w.WriteTo(f); err != nil {
+		_ = f.Close()
 		tb.Fatalf("write mmdb: %v", err)
+	}
+	if err := f.Close(); err != nil { // a failed close can mean unflushed data
+		tb.Fatalf("close %s: %v", path, err)
 	}
 	return path
 }

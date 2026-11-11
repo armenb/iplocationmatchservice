@@ -29,9 +29,10 @@ const (
 // IPLocationMatchService answers geolocation questions about IP addresses.
 type IPLocationMatchServiceClient interface {
 	// CheckIP reports whether an IP address is located in any of the given
-	// countries. Addresses absent from the database match no country.
+	// countries. An address with no known country (absent from the database, or
+	// without a country record) never matches: unknown locations fail closed.
 	// Returns INVALID_ARGUMENT for a malformed IP, a malformed country code, or
-	// an empty country list.
+	// an empty country list, or a list longer than the server's limit.
 	CheckIP(ctx context.Context, in *CheckIPRequest, opts ...grpc.CallOption) (*CheckIPResponse, error)
 }
 
@@ -60,9 +61,10 @@ func (c *iPLocationMatchServiceClient) CheckIP(ctx context.Context, in *CheckIPR
 // IPLocationMatchService answers geolocation questions about IP addresses.
 type IPLocationMatchServiceServer interface {
 	// CheckIP reports whether an IP address is located in any of the given
-	// countries. Addresses absent from the database match no country.
+	// countries. An address with no known country (absent from the database, or
+	// without a country record) never matches: unknown locations fail closed.
 	// Returns INVALID_ARGUMENT for a malformed IP, a malformed country code, or
-	// an empty country list.
+	// an empty country list, or a list longer than the server's limit.
 	CheckIP(context.Context, *CheckIPRequest) (*CheckIPResponse, error)
 	mustEmbedUnimplementedIPLocationMatchServiceServer()
 }

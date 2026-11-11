@@ -2,14 +2,15 @@ syntax = "proto3";
 
 package iplocationmatch.v1;
 
-option go_package = "iplocationmatch/gen/iplocationmatch/v1;iplocationmatchv1";
+option go_package = "iplocationmatchservice/gen/iplocationmatch/v1;iplocationmatchv1";
 
 // IPLocationMatchService answers geolocation questions about IP addresses.
 service IPLocationMatchService {
   // CheckIP reports whether an IP address is located in any of the given
-  // countries. Addresses absent from the database match no country.
+  // countries. An address with no known country (absent from the database, or
+  // without a country record) never matches: unknown locations fail closed.
   // Returns INVALID_ARGUMENT for a malformed IP, a malformed country code, or
-  // an empty country list.
+  // an empty country list, or a list longer than the server's limit.
   rpc CheckIP(CheckIPRequest) returns (CheckIPResponse);
 }
 
@@ -17,7 +18,9 @@ message CheckIPRequest {
   // IPv4 or IPv6 address in textual form, e.g. "81.2.69.142" or "2001:db8::1".
   string ip = 1;
   // ISO 3166-1 alpha-2 country codes, e.g. ["US", "CA"]. Case-insensitive.
-  // The IP matches if it is located in any of these countries. Must be non-empty.
+  // The IP matches if it is located in any of these countries. Must be non-empty,
+  // and have at most 50 entries unless the server was configured with a different
+  // -max-allowed-countries; longer lists are rejected with INVALID_ARGUMENT.
   repeated string allowed_countries = 2;
 }
 

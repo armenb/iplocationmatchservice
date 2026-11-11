@@ -19,7 +19,9 @@ spec:
       labels:
         app.kubernetes.io/name: iplocationmatch
     spec:
-      # The server drains in-flight requests for up to 10s on SIGTERM.
+      # Kubernetes counts this from the start of pod deletion, before the preStop hook
+      # runs. It must cover the preStop sleep below (5s) plus the server's drain of
+      # in-flight requests after SIGTERM (up to 10s).
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
@@ -36,6 +38,14 @@ spec:
               containerPort: 8080
             - name: grpc
               containerPort: 9090
+          lifecycle:
+            preStop:
+              # Keep serving for a few seconds before SIGTERM so that routes to this pod
+              # are removed everywhere before the server stops accepting connections.
+              # The kubelet runs this action itself (the distroless image has no
+              # `sleep` binary). Tune the 5s to how long your ingress or mesh needs.
+              sleep:
+                seconds: 5
           readinessProbe:
             httpGet:
               path: /healthz
