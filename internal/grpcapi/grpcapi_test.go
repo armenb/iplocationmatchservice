@@ -7,15 +7,15 @@ import (
 	"net"
 	"testing"
 
-	iplocationmatchv1 "github.com/armenb/iplocationmatch/gen/iplocationmatch/v1"
-	"github.com/armenb/iplocationmatch/internal/grpcapi"
-	"github.com/armenb/iplocationmatch/internal/iplocationmatch"
-	"github.com/armenb/iplocationmatch/internal/testdb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	iplocationmatchv1 "iplocationmatch/gen/iplocationmatch/v1"
+	"iplocationmatch/internal/grpcapi"
+	"iplocationmatch/internal/iplocationmatch"
+	"iplocationmatch/internal/testdb"
 )
 
 // newClient serves the real handler over an in-memory listener.

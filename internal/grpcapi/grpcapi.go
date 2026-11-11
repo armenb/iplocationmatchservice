@@ -6,10 +6,10 @@ import (
 	"errors"
 	"log/slog"
 
-	iplocationmatchv1 "github.com/armenb/iplocationmatch/gen/iplocationmatch/v1"
-	"github.com/armenb/iplocationmatch/internal/iplocationmatch"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	iplocationmatchv1 "iplocationmatch/gen/iplocationmatch/v1"
+	"iplocationmatch/internal/iplocationmatch"
 )
 
 // Matcher is the lookup the server depends on; *iplocationmatch.Checker satisfies it.

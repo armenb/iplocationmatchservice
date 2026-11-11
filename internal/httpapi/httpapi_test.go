@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/armenb/iplocationmatch/internal/httpapi"
-	"github.com/armenb/iplocationmatch/internal/iplocationmatch"
-	"github.com/armenb/iplocationmatch/internal/testdb"
+	"iplocationmatch/internal/httpapi"
+	"iplocationmatch/internal/iplocationmatch"
+	"iplocationmatch/internal/testdb"
 )
 
 func newHandler(t *testing.T, m httpapi.Matcher) http.Handler {

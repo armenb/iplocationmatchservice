@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/armenb/iplocationmatch/internal/iplocationmatch"
-	"github.com/armenb/iplocationmatch/internal/testdb"
+	"iplocationmatch/internal/iplocationmatch"
+	"iplocationmatch/internal/testdb"
 )
 
 func newChecker(t *testing.T) *iplocationmatch.Checker {

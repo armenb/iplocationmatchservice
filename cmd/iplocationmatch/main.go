@@ -15,12 +15,12 @@ import (
 	"syscall"
 	"time"
 
-	iplocationmatchv1 "github.com/armenb/iplocationmatch/gen/iplocationmatch/v1"
-	"github.com/armenb/iplocationmatch/internal/grpcapi"
-	"github.com/armenb/iplocationmatch/internal/httpapi"
-	"github.com/armenb/iplocationmatch/internal/iplocationmatch"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	iplocationmatchv1 "iplocationmatch/gen/iplocationmatch/v1"
+	"iplocationmatch/internal/grpcapi"
+	"iplocationmatch/internal/httpapi"
+	"iplocationmatch/internal/iplocationmatch"
 )
 
 const shutdownTimeout = 10 * time.Second

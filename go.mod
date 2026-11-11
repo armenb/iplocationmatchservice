@@ -1,4 +1,4 @@
-module github.com/armenb/iplocationmatch
+module iplocationmatch
 
 go 1.27.4
 

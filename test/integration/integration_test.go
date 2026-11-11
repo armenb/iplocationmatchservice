@@ -23,12 +23,12 @@ import (
 	"testing"
 	"time"
 
-	iplocationmatchv1 "github.com/armenb/iplocationmatch/gen/iplocationmatch/v1"
-	"github.com/armenb/iplocationmatch/internal/testdb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+	iplocationmatchv1 "iplocationmatch/gen/iplocationmatch/v1"
+	"iplocationmatch/internal/testdb"
 )
 
 // neverACountry is a well-formed code that is not assigned to any country, so
@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	binPath = filepath.Join(dir, "iplocationmatch")
-	if out, err := exec.Command("go", "build", "-o", binPath, "github.com/armenb/iplocationmatch/cmd/iplocationmatch").CombinedOutput(); err != nil {
+	if out, err := exec.Command("go", "build", "-o", binPath, "iplocationmatch/cmd/iplocationmatch").CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "go build: %v\n%s", err, out)
 		os.RemoveAll(dir)
 		os.Exit(1)

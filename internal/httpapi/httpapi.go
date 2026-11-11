@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/armenb/iplocationmatch/internal/iplocationmatch"
+	"iplocationmatch/internal/iplocationmatch"
 )
 
 // maxBodyBytes bounds request bodies; a realistic request is well under 1 KiB.

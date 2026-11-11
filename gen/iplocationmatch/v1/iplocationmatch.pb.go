@@ -132,7 +132,7 @@ const file_iplocationmatch_v1_iplocationmatch_proto_rawDesc = "" +
 	"\x0fCheckIPResponse\x12\x14\n" +
 	"\x05match\x18\x01 \x01(\bR\x05match2l\n" +
 	"\x16IPLocationMatchService\x12R\n" +
-	"\aCheckIP\x12\".iplocationmatch.v1.CheckIPRequest\x1a#.iplocationmatch.v1.CheckIPResponseBLZJgithub.com/armenb/iplocationmatch/gen/iplocationmatch/v1;iplocationmatchv1b\x06proto3"
+	"\aCheckIP\x12\".iplocationmatch.v1.CheckIPRequest\x1a#.iplocationmatch.v1.CheckIPResponseB:Z8iplocationmatch/gen/iplocationmatch/v1;iplocationmatchv1b\x06proto3"
 
 var (
 	file_iplocationmatch_v1_iplocationmatch_proto_rawDescOnce sync.Once

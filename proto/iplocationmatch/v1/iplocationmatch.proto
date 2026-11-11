@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package iplocationmatch.v1;
 
-option go_package = "github.com/armenb/iplocationmatch/gen/iplocationmatch/v1;iplocationmatchv1";
+option go_package = "iplocationmatch/gen/iplocationmatch/v1;iplocationmatchv1";
 
 // IPLocationMatchService answers geolocation questions about IP addresses.
 service IPLocationMatchService {
