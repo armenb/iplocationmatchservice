@@ -95,6 +95,11 @@ func run(ctx context.Context, log *slog.Logger, dbPath, httpAddr, grpcAddr strin
 		done := make(chan struct{})
 		go func() { grpcSrv.GracefulStop(); close(done) }()
 		herr := httpSrv.Shutdown(sctx)
+		if herr != nil {
+			// The graceful drain failed or timed out: force-close what is left,
+			// mirroring the grpcSrv.Stop() fallback below.
+			herr = errors.Join(herr, httpSrv.Close())
+		}
 		select {
 		case <-done:
 		case <-sctx.Done():
