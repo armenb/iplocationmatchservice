@@ -34,21 +34,31 @@ func main() {
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	if err := run(ctx, log, *dbPath, *httpAddr, *grpcAddr); err != nil {
+	if err := run(log, *dbPath, *httpAddr, *grpcAddr); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, log *slog.Logger, dbPath, httpAddr, grpcAddr string) error {
+func run(log *slog.Logger, dbPath, httpAddr, grpcAddr string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	checker, err := iplocationmatch.Open(dbPath)
 	if err != nil {
 		return err
 	}
-	defer checker.Close()
+
+	// Close the database only after a clean drain. After a forced stop a handler
+	// may still be mid-lookup and unmapping under it would fault; the process is
+	// about to exit, so the OS reclaims the mapping instead. drained is written
+	// by the shutdown goroutine and read after g.Wait(), which orders the two.
+	drained := false
+	defer func() {
+		if drained {
+			_ = checker.Close()
+		}
+	}()
 
 	httpLis, err := net.Listen("tcp", httpAddr)
 	if err != nil {
@@ -88,6 +98,9 @@ func run(ctx context.Context, log *slog.Logger, dbPath, httpAddr, grpcAddr strin
 	g.Go(func() error {
 		<-gctx.Done() // signal, or one of the servers failed
 		log.Info("shutting down")
+		// Restore default signal handling: while draining, a second SIGINT/SIGTERM
+		// should kill the process rather than be swallowed by NotifyContext.
+		stop()
 		// Fresh context: gctx is already cancelled, but draining needs time.
 		sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
@@ -102,6 +115,7 @@ func run(ctx context.Context, log *slog.Logger, dbPath, httpAddr, grpcAddr strin
 		}
 		select {
 		case <-done:
+			drained = herr == nil
 		case <-sctx.Done():
 			grpcSrv.Stop()
 		}
