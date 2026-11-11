@@ -1,0 +1,3 @@
+bin/
+# GeoLite2 data is licensed by MaxMind; fetch it with `make fetch-db` rather than committing it.
+data/*.mmdb
