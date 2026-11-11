@@ -40,7 +40,7 @@ SIGINT/SIGTERM trigger a graceful shutdown (10s drain).
 `POST /v1/check`
 
 ```sh
-curl -s localhost:8080/v1/check -d '{"ip":"81.2.69.142","countries":["GB","US"]}'
+curl -s localhost:8080/v1/check -d '{"ip":"81.2.69.142","allowed_countries":["GB","US"]}'
 # {"match":true}
 ```
 
@@ -48,7 +48,7 @@ curl -s localhost:8080/v1/check -d '{"ip":"81.2.69.142","countries":["GB","US"]}
   (`[2001:db8::1]`) and port suffixes (`1.2.3.4:443`, `[2001:db8::1]:443`) are not currently accepted and
   return 400 / `INVALID_ARGUMENT`. Support could be added, e.g. by falling back to `netip.ParseAddrPort` in
   `parseIP`; strip them in the load balancer or caller until then.
-- `countries`: non-empty list of ISO 3166-1 alpha-2 codes, case-insensitive.
+- `allowed_countries`: non-empty list of ISO 3166-1 alpha-2 codes, case-insensitive.
 - An address not present in the database returns `{"match":false}`.
 - Errors return `{"error":"..."}`: `400` for a bad IP, bad country code, empty list, malformed JSON or
   unknown fields; `405` for non-POST; `413` for bodies over 1 MiB.
@@ -58,12 +58,12 @@ curl -s localhost:8080/v1/check -d '{"ip":"81.2.69.142","countries":["GB","US"]}
 ## gRPC API
 
 Defined in [`proto/iplocationmatch/v1/iplocationmatch.proto`](proto/iplocationmatch/v1/iplocationmatch.proto):
-`iplocationmatch.v1.IPLocationMatchService/CheckIP(CheckIPRequest{ip, countries}) -> CheckIPResponse{match}`.
+`iplocationmatch.v1.IPLocationMatchService/CheckIP(CheckIPRequest{ip, allowed_countries}) -> CheckIPResponse{match}`.
 Invalid input returns `INVALID_ARGUMENT`.
 
 ```sh
 grpcurl -plaintext -proto proto/iplocationmatch/v1/iplocationmatch.proto -import-path proto \
-  -d '{"ip":"81.2.69.142","countries":["GB"]}' localhost:9090 iplocationmatch.v1.IPLocationMatchService/CheckIP
+  -d '{"ip":"81.2.69.142","allowed_countries":["GB"]}' localhost:9090 iplocationmatch.v1.IPLocationMatchService/CheckIP
 ```
 
 Generated code lives in `gen/` and is committed; regenerate with `make proto`.
@@ -76,7 +76,7 @@ protocol's own convention rather than matched one-to-one:
 - gRPC methods are verb-noun names on a service (`IPLocationMatchService/CheckIP`).
 - HTTP routes are a short path under a version prefix (`/v1/check`). The service name is deliberately
   location-generic, so the route avoids repeating "ip" or "country"; the request body already names
-  the `ip` and `countries` it checks.
+  the `ip` and `allowed_countries` it checks.
 
 ## Container and Kubernetes
 

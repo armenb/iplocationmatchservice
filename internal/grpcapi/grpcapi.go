@@ -31,7 +31,7 @@ func NewServer(m Matcher, log *slog.Logger) *Server {
 
 // CheckIP implements iplocationmatchv1.IPLocationMatchServiceServer.
 func (s *Server) CheckIP(ctx context.Context, req *iplocationmatchv1.CheckIPRequest) (*iplocationmatchv1.CheckIPResponse, error) {
-	match, err := s.m.InCountries(req.GetIp(), req.GetCountries())
+	match, err := s.m.InCountries(req.GetIp(), req.GetAllowedCountries())
 	switch {
 	case errors.Is(err, iplocationmatch.ErrInvalidIP),
 		errors.Is(err, iplocationmatch.ErrInvalidCountry),

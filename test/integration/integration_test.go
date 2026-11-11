@@ -180,7 +180,7 @@ func runSuite(t *testing.T, ds dataset) {
 
 	t.Run("http", func(t *testing.T) {
 		body := func(ip string, countries ...string) string {
-			b, _ := json.Marshal(map[string]any{"ip": ip, "countries": countries})
+			b, _ := json.Marshal(map[string]any{"ip": ip, "allowed_countries": countries})
 			return string(b)
 		}
 		if code, out := postCheck(t, body(ds.v4.ip, neverACountry, ds.v4.country)); code != 200 || out["match"] != true {
@@ -198,19 +198,19 @@ func runSuite(t *testing.T, ds dataset) {
 	})
 
 	t.Run("grpc", func(t *testing.T) {
-		resp, err := client.CheckIP(t.Context(), &iplocationmatchv1.CheckIPRequest{Ip: ds.v4.ip, Countries: []string{neverACountry, ds.v4.country}})
+		resp, err := client.CheckIP(t.Context(), &iplocationmatchv1.CheckIPRequest{Ip: ds.v4.ip, AllowedCountries: []string{neverACountry, ds.v4.country}})
 		if err != nil || !resp.GetMatch() {
 			t.Fatalf("ipv4 match: %v, %v", resp, err)
 		}
-		resp, err = client.CheckIP(t.Context(), &iplocationmatchv1.CheckIPRequest{Ip: ds.v6.ip, Countries: []string{ds.v6.country}})
+		resp, err = client.CheckIP(t.Context(), &iplocationmatchv1.CheckIPRequest{Ip: ds.v6.ip, AllowedCountries: []string{ds.v6.country}})
 		if err != nil || !resp.GetMatch() {
 			t.Fatalf("ipv6 match: %v, %v", resp, err)
 		}
-		resp, err = client.CheckIP(t.Context(), &iplocationmatchv1.CheckIPRequest{Ip: ds.v4.ip, Countries: []string{neverACountry}})
+		resp, err = client.CheckIP(t.Context(), &iplocationmatchv1.CheckIPRequest{Ip: ds.v4.ip, AllowedCountries: []string{neverACountry}})
 		if err != nil || resp.GetMatch() {
 			t.Fatalf("no match: %v, %v", resp, err)
 		}
-		_, err = client.CheckIP(t.Context(), &iplocationmatchv1.CheckIPRequest{Ip: "bogus", Countries: []string{ds.v4.country}})
+		_, err = client.CheckIP(t.Context(), &iplocationmatchv1.CheckIPRequest{Ip: "bogus", AllowedCountries: []string{ds.v4.country}})
 		if status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("invalid ip: %v, want InvalidArgument", err)
 		}
@@ -237,7 +237,7 @@ func runSuite(t *testing.T, ds dataset) {
 					for _, tc := range cases {
 						var got bool
 						if i%2 == 0 {
-							body := fmt.Sprintf(`{"ip":%q,"countries":[%q]}`, tc.ip, tc.country)
+							body := fmt.Sprintf(`{"ip":%q,"allowed_countries":[%q]}`, tc.ip, tc.country)
 							req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+httpAddr+"/v1/check", bytes.NewBufferString(body))
 							resp, err := http.DefaultClient.Do(req)
 							if err != nil {
@@ -253,7 +253,7 @@ func runSuite(t *testing.T, ds dataset) {
 							}
 							got = out.Match
 						} else {
-							r, err := client.CheckIP(ctx, &iplocationmatchv1.CheckIPRequest{Ip: tc.ip, Countries: []string{tc.country}})
+							r, err := client.CheckIP(ctx, &iplocationmatchv1.CheckIPRequest{Ip: tc.ip, AllowedCountries: []string{tc.country}})
 							if err != nil {
 								t.Errorf("grpc: %v", err)
 								return

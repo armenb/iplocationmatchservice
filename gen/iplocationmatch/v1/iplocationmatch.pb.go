@@ -26,9 +26,10 @@ type CheckIPRequest struct {
 	// IPv4 or IPv6 address in textual form, e.g. "81.2.69.142" or "2001:db8::1".
 	Ip string `protobuf:"bytes,1,opt,name=ip,proto3" json:"ip,omitempty"`
 	// ISO 3166-1 alpha-2 country codes, e.g. ["US", "CA"]. Case-insensitive.
-	Countries     []string `protobuf:"bytes,2,rep,name=countries,proto3" json:"countries,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// The IP matches if it is located in any of these countries. Must be non-empty.
+	AllowedCountries []string `protobuf:"bytes,2,rep,name=allowed_countries,json=allowedCountries,proto3" json:"allowed_countries,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *CheckIPRequest) Reset() {
@@ -68,9 +69,9 @@ func (x *CheckIPRequest) GetIp() string {
 	return ""
 }
 
-func (x *CheckIPRequest) GetCountries() []string {
+func (x *CheckIPRequest) GetAllowedCountries() []string {
 	if x != nil {
-		return x.Countries
+		return x.AllowedCountries
 	}
 	return nil
 }
@@ -124,10 +125,10 @@ var File_iplocationmatch_v1_iplocationmatch_proto protoreflect.FileDescriptor
 
 const file_iplocationmatch_v1_iplocationmatch_proto_rawDesc = "" +
 	"\n" +
-	"(iplocationmatch/v1/iplocationmatch.proto\x12\x12iplocationmatch.v1\">\n" +
+	"(iplocationmatch/v1/iplocationmatch.proto\x12\x12iplocationmatch.v1\"M\n" +
 	"\x0eCheckIPRequest\x12\x0e\n" +
-	"\x02ip\x18\x01 \x01(\tR\x02ip\x12\x1c\n" +
-	"\tcountries\x18\x02 \x03(\tR\tcountries\"'\n" +
+	"\x02ip\x18\x01 \x01(\tR\x02ip\x12+\n" +
+	"\x11allowed_countries\x18\x02 \x03(\tR\x10allowedCountries\"'\n" +
 	"\x0fCheckIPResponse\x12\x14\n" +
 	"\x05match\x18\x01 \x01(\bR\x05match2l\n" +
 	"\x16IPLocationMatchService\x12R\n" +

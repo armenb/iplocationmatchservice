@@ -63,7 +63,7 @@ func TestCheckIP(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp, err := client.CheckIP(t.Context(), &iplocationmatchv1.CheckIPRequest{Ip: tt.ip, Countries: tt.countries})
+			resp, err := client.CheckIP(t.Context(), &iplocationmatchv1.CheckIPRequest{Ip: tt.ip, AllowedCountries: tt.countries})
 			if got := status.Code(err); got != tt.wantCode {
 				t.Fatalf("code = %v, want %v (err %v)", got, tt.wantCode, err)
 			}

@@ -17,7 +17,8 @@ message CheckIPRequest {
   // IPv4 or IPv6 address in textual form, e.g. "81.2.69.142" or "2001:db8::1".
   string ip = 1;
   // ISO 3166-1 alpha-2 country codes, e.g. ["US", "CA"]. Case-insensitive.
-  repeated string countries = 2;
+  // The IP matches if it is located in any of these countries. Must be non-empty.
+  repeated string allowed_countries = 2;
 }
 
 message CheckIPResponse {

@@ -44,20 +44,21 @@ func TestCheck(t *testing.T) {
 		wantStatus int
 		wantBody   string // exact JSON body, or "" to skip
 	}{
-		{"match", "POST", `{"ip":"81.2.69.142","countries":["GB","US"]}`, 200, `{"match":true}`},
-		{"no match", "POST", `{"ip":"81.2.69.142","countries":["US"]}`, 200, `{"match":false}`},
-		{"ip not in database", "POST", `{"ip":"8.8.8.8","countries":["US"]}`, 200, `{"match":false}`},
-		{"ipv6", "POST", `{"ip":"2001:218::1","countries":["jp"]}`, 200, `{"match":true}`},
-		{"invalid ip", "POST", `{"ip":"nope","countries":["US"]}`, 400, ""},
-		{"missing ip", "POST", `{"countries":["US"]}`, 400, ""},
-		{"invalid country", "POST", `{"ip":"81.2.69.142","countries":["USA"]}`, 400, ""},
-		{"empty countries", "POST", `{"ip":"81.2.69.142","countries":[]}`, 400, ""},
-		{"missing countries", "POST", `{"ip":"81.2.69.142"}`, 400, ""},
+		{"match", "POST", `{"ip":"81.2.69.142","allowed_countries":["GB","US"]}`, 200, `{"match":true}`},
+		{"no match", "POST", `{"ip":"81.2.69.142","allowed_countries":["US"]}`, 200, `{"match":false}`},
+		{"ip not in database", "POST", `{"ip":"8.8.8.8","allowed_countries":["US"]}`, 200, `{"match":false}`},
+		{"ipv6", "POST", `{"ip":"2001:218::1","allowed_countries":["jp"]}`, 200, `{"match":true}`},
+		{"invalid ip", "POST", `{"ip":"nope","allowed_countries":["US"]}`, 400, ""},
+		{"missing ip", "POST", `{"allowed_countries":["US"]}`, 400, ""},
+		{"invalid country", "POST", `{"ip":"81.2.69.142","allowed_countries":["USA"]}`, 400, ""},
+		{"empty allowed_countries", "POST", `{"ip":"81.2.69.142","allowed_countries":[]}`, 400, ""},
+		{"missing allowed_countries", "POST", `{"ip":"81.2.69.142"}`, 400, ""},
 		{"malformed json", "POST", `{"ip":`, 400, ""},
 		{"empty body", "POST", ``, 400, ""},
-		{"unknown field", "POST", `{"ip":"81.2.69.142","countries":["GB"],"x":1}`, 400, ""},
-		{"trailing data", "POST", `{"ip":"81.2.69.142","countries":["GB"]} {}`, 400, ""},
-		{"wrong type", "POST", `{"ip":"81.2.69.142","countries":"GB"}`, 400, ""},
+		{"unknown field", "POST", `{"ip":"81.2.69.142","allowed_countries":["GB"],"x":1}`, 400, ""},
+		{"old field name rejected", "POST", `{"ip":"81.2.69.142","countries":["GB"]}`, 400, ""},
+		{"trailing data", "POST", `{"ip":"81.2.69.142","allowed_countries":["GB"]} {}`, 400, ""},
+		{"wrong type", "POST", `{"ip":"81.2.69.142","allowed_countries":"GB"}`, 400, ""},
 		{"GET not allowed", "GET", ``, 405, ""},
 	}
 	for _, tt := range tests {
@@ -80,7 +81,7 @@ func TestCheck(t *testing.T) {
 
 func TestCheckBodyTooLarge(t *testing.T) {
 	h := newHandler(t, nil)
-	body := `{"ip":"81.2.69.142","countries":["` + strings.Repeat("A", 2<<20) + `"]}`
+	body := `{"ip":"81.2.69.142","allowed_countries":["` + strings.Repeat("A", 2<<20) + `"]}`
 	if rec := do(h, "POST", "/v1/check", body); rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, want 413", rec.Code)
 	}
@@ -94,7 +95,7 @@ func (failingMatcher) InCountries(string, []string) (bool, error) {
 
 func TestCheckInternalErrorIsOpaque(t *testing.T) {
 	h := newHandler(t, failingMatcher{})
-	rec := do(h, "POST", "/v1/check", `{"ip":"1.1.1.1","countries":["US"]}`)
+	rec := do(h, "POST", "/v1/check", `{"ip":"1.1.1.1","allowed_countries":["US"]}`)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)
 	}

@@ -21,8 +21,8 @@ type Matcher interface {
 
 // CheckRequest is the body of POST /v1/check.
 type CheckRequest struct {
-	IP        string   `json:"ip"`
-	Countries []string `json:"countries"`
+	IP               string   `json:"ip"`
+	AllowedCountries []string `json:"allowed_countries"`
 }
 
 // CheckResponse is the success body of POST /v1/check.
@@ -67,7 +67,7 @@ func (h *handler) check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	match, err := h.m.InCountries(req.IP, req.Countries)
+	match, err := h.m.InCountries(req.IP, req.AllowedCountries)
 	switch {
 	case errors.Is(err, iplocationmatch.ErrInvalidIP),
 		errors.Is(err, iplocationmatch.ErrInvalidCountry),
